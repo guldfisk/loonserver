@@ -1,0 +1,10 @@
+# Created by .ignore support plugin (hsz.mobi)
+/loonserver/test.py
+.idea/
+/loonserver/client.py
+/loonserver/socketservertest.py
+/loonserver/socketclient.py
+!/loonserver/client.py
+loonserver/__pycache__/
+loonserver/games/__pycache__/
+loonserver/networking/__pycache__/
