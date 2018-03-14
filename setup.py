@@ -6,6 +6,5 @@ setup(
 	packages=['loonserver'],
 	install_requires=[
 		'frozendict',
-		'ordered_dict',
 	]
 )
