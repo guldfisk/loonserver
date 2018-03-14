@@ -112,7 +112,9 @@ class LoonServer(Process):
 
 
 def test():
-	server = LoonServer('localhost')
+	import sys
+	domain = sys.argv[1] if len(sys.argv) > 1 else 'localhost'
+	server = LoonServer(domain)
 	server.start()
 	server.join()
 	# soap_thread = SoapThread('localhost', 8080)
