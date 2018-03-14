@@ -18,5 +18,6 @@ setup(
 	install_requires=[
 		'frozendict',
 		'pysimplesoap',
+		'ordered_set',
 	]
 )
