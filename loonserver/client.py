@@ -37,9 +37,8 @@ class Receiver(threading.Thread):
 				print(received)
 
 
-# TARGET = 'dominion.lost-world.dk'
-# TARGET = '130.225.170.243'
-TARGET = 'localhost'
+TARGET = 'dominion.lost-world.dk'
+# TARGET = 'localhost'
 # target = 'http://dominion.lost-world.dk'
 
 def create_game() -> str:
