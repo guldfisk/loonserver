@@ -36,12 +36,18 @@ class Receiver(threading.Thread):
 			else:
 				print(received)
 
+
+# TARGET = 'dominion.lost-world.dk'
+# TARGET = '130.225.170.243'
+TARGET = 'localhost'
+# target = 'http://dominion.lost-world.dk'
+
 def create_game() -> str:
 	client = SoapClient(
-		location="http://localhost:8080/",
-		action='http://localhost:8080/',  # SOAPAction
-		namespace="http://example.com/sample.wsdl",
-		soap_ns='soap',
+		location ='http://'+TARGET + ':8080',
+		action ='http://'+TARGET + ':8080',
+		namespace = "http://example.com/sample.wsdl",
+		soap_ns = 'soap',
 		ns="ns0",
 	)
 
@@ -60,7 +66,8 @@ def test():
 	print('id: ', player_id)
 
 	s = JsonSocket(_socket.AF_INET, _socket.SOCK_STREAM)
-	s.connect(("127.0.0.1", 9999))
+	print(TARGET)
+	s.connect((TARGET, 9999))
 
 	receiver = Receiver(s)
 	receiver.start()

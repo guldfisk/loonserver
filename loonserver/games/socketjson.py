@@ -28,6 +28,24 @@ class SelectionException(Exception):
 	pass
 
 
+class BinaryLock(object):
+
+	def __init__(self):
+		super().__init__()
+		self._locked = False
+		self._lock = threading.Lock()
+
+	def acquire(self):
+		self._locked = True
+		self._lock.acquire()
+
+	def release(self):
+		if not self._locked:
+			return
+		self._locked = False
+		self._lock.release()
+
+
 class PlayerConnection(object):
 
 	def __init__(self, player: t.Optional[Player] = None, socket: t.Optional[JsonSocket] = None):
@@ -36,7 +54,7 @@ class PlayerConnection(object):
 		self.events = [] #type: t.List[Event]
 		self._pending_selection = None #type: str
 
-		self._lock = threading.Lock()
+		self._lock = BinaryLock()
 		self._lock.acquire()
 
 		self._returned_json = None
