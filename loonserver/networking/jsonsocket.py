@@ -7,9 +7,9 @@ from socket import socket, AF_INET, SOCK_STREAM
 
 class JsonSocket(socket):
 
-	def __init__(self, family=AF_INET, type=SOCK_STREAM, proto=0, fileno=None, wrapping: socket = None):
+	def __init__(self, family=AF_INET, socket_type=SOCK_STREAM, proto=0, fileno=None, wrapping: socket = None):
 		if wrapping is None:
-			super().__init__(family, type, proto, fileno)
+			super().__init__(family, socket_type, proto, fileno)
 		else:
 			self.recv = wrapping.recv
 			self.send = wrapping.send

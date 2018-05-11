@@ -1,7 +1,5 @@
 import typing as t
 
-import json
-import socket as _socket
 import re
 import threading
 
@@ -10,6 +8,7 @@ from eventtree.replaceevent import Event, Condition
 from throneloon.game.artifacts.players import Player
 from throneloon.game.artifacts.artifact import GameArtifact
 from throneloon.game.artifacts.observation import GameObserver
+from throneloon.game.artifacts.artifact import GameObject
 from throneloon.io.interface import IOInterface, io_additional_options, io_option, io_options
 
 from loonserver.networking.jsonsocket import JsonSocket
@@ -22,6 +21,36 @@ def _stringify_option(option: io_option):
 		return option.source.name
 	else:
 		return option
+
+
+def _jsonify_game_object(game_object: GameObject, player: GameObserver) -> t.Any:
+	return {
+		key: (
+			value.serialize(player).get('id', None)
+			if isinstance(value, GameObject) else
+			value
+		) for key, value in game_object.serialize(player).items()
+	}
+
+
+def _jsonify_condition(condition: Condition, player: GameObserver) -> t.Any:
+	return {
+		'type': 'condition',
+		'source': _jsonify(condition.source, player)
+	}
+
+
+def _jsonify(option: io_option, player: GameObserver) -> t.Any:
+	if isinstance(option, GameObject):
+		return _jsonify_game_object(option, player)
+	elif isinstance(option, Condition):
+		return _jsonify_condition(option, player)
+	elif isinstance(option, str):
+		return option
+	elif isinstance(option, type):
+		return type.__name__
+	else:
+		return str(option)
 
 
 class SelectionException(Exception):
@@ -51,37 +80,31 @@ class PlayerConnection(object):
 	def __init__(self, player: t.Optional[Player] = None, socket: t.Optional[JsonSocket] = None):
 		self.player = player #type: t.Optional[Player]
 		self._socket = socket #type: t.Optional[JsonSocket]
-		self.events = [] #type: t.List[Event]
-		self._pending_selection = None #type: str
+		self.events = [] #type: t.List[t.Tuple[Event, bool]]
+		self._pending_selection = None #type: t.Any
 
 		self._lock = BinaryLock()
 		self._lock.acquire()
 
 		self._returned_json = None
 
-	def _ask_player(self, options: str):
-		self._socket.send_json(
-			{
-				'type': 'select',
-				'options': options,
-			}
-		)
+	def _ask_player(self, options: t.Any):
+		self._socket.send_json(options)
 		self._returned_json = self._socket.get_json()
 		self._lock.release()
 
-	def _notify_event(self, event: Event):
+	def _notify_event(self, event: Event, first: bool):
 		self._socket.send_json(
 			{
 				'type': 'event',
 				'event_type': event.__class__.__name__,
-				'values': str(event.values),
+				'first': first,
+				'values': dict({key: _jsonify(value, self.player) for key, value in event.values.items()}),
 			}
 		)
 
 	def _select(self) -> str:
 		self._ask_player(self._pending_selection)
-
-		self._lock.acquire()
 
 		self._pending_selection = None
 
@@ -96,7 +119,7 @@ class PlayerConnection(object):
 
 		return self._returned_json['selected']
 
-	def select(self, options: str) -> str:
+	def select(self, options: t.Any) -> str:
 		if self._socket is None:
 			self._lock.acquire()
 
@@ -111,29 +134,31 @@ class PlayerConnection(object):
 		was_none = self._socket is None
 		self._socket = socket
 
-		for event in self.events:
-			self._notify_event(event)
+		for event, first in self.events:
+			self._notify_event(event, first)
 
 		if was_none:
 			self._lock.release()
 
-	def notify_event(self, event: Event) -> None:
-		self.events.append(event)
-		if self._socket:
-			self._notify_event(event)
+	def notify_event(self, event: Event, first: bool) -> None:
+		self.events.append((event, first))
+		if self._socket is not None:
+			self._notify_event(event, first)
 
 
 class SocketInterface(IOInterface):
 
-	def __init__(self, ids: t.List[str]) -> None:
+	def __init__(self, ids: t.Iterable[str]) -> None:
 		super().__init__()
-		self._ids = ids
+
+		self._ids = tuple(ids) #type: t.Tuple[str, ...]
 		self._connections = {
 			_id: PlayerConnection()
 			for _id in
 			ids
 		} #type: t.Dict[str, PlayerConnection]
-		self._players = {} #type: t.Dict[Player, PlayerConnection]
+
+		self._players = {} #type: t.Dict[GameObserver, PlayerConnection]
 
 	def update_socket(self, player_id: str, socket: JsonSocket):
 		self._connections[player_id].set_socket(socket)
@@ -151,11 +176,18 @@ class SocketInterface(IOInterface):
 		additional_options: io_additional_options = None,
 		reason: t.Optional[str] = None
 	) -> io_option:
-		pass
+		return self.select_options(
+			player = player,
+			options = options,
+			minimum = 0 if optional else 1,
+			maximum = 1,
+			additional_options = additional_options,
+			reason = reason,
+		)[0]
 
 	def select_options(
 		self,
-	   player: Player,
+	   player: GameObserver,
 	   options: io_options,
 	   minimum: t.Optional[int] = 1,
 	   maximum: t.Optional[int] = None,
@@ -176,65 +208,29 @@ class SocketInterface(IOInterface):
 		_maximum = len(_options) if maximum is None else maximum
 		_minimum = len(_options) if minimum is None else minimum
 
-		end_picks = 'finished selecting'
+		end_picks = 'DONE'
 
 		picked = []
 		for _ in range(_maximum):
-			message = (
-				str(player)
-				+(
-					': ({}) '.format(picked)
-					if _maximum > 1 else
-					''
-				)
-				+', options: '
-				+ str(
-					[_stringify_option(option) for option in _options]
+			message = {
+				'type': 'select',
+				'options': (
+					[_jsonify(option, player) for option in _options]
 					+ (
 						[end_picks]
 						if len(picked) > _minimum else
 						[]
 					)
-				)
-				+ (
-					(
-						' additional options: '
-						+ str(
-							[
-								_stringify_option(key)
-								+ (
-									''
-									if value is None else
-									': ' + value
-								)
-								for key, value in _additional_options_in.items()
-							]
-						)
-					) if not picked else ''
-				)
-				+ (
-					', ' + reason
-					if reason else
-					''
-				)
-				+ ' | A: {}, B: {}, C: {}, h: {}, b: {}, l: {}, y: {}'.format(
-					player.actions,
-					player.buys,
-					player.currency,
-					len(player.hand),
-					len(player.battlefield),
-					len(player.library),
-					len(player.graveyard),
-				)
-			)
+				),
+				'additional options': [
+					_jsonify(key, player) for key in additional_options
+				]
+			}
 
 			_looping = True
-			last_valid = True
-			choice = ''
 			while _looping:
 				force_add_op = False
 
-				# choice = input(('' if last_valid else '"{}" invalid'.format(choice))+': ')
 				choice = self._players[player].select(message)
 
 				if choice and choice[0] == '-':
@@ -258,17 +254,18 @@ class SocketInterface(IOInterface):
 						if pattern.match(key):
 							return _additional_options[key]
 
-				last_valid = False
-
 		return picked
 
-	def notify_event(self, event: Event) -> None:
-		# print(
-		# 	'{}: {}'.format(
-		# 		event.__class__.__name__,
-		# 		event.values,
-		# 	)
-		#
-		# )
-		for connection in self._connections.values():
-			connection.notify_event(event)
+	def notify_event(self, event: Event, player: GameObserver, first: bool) -> None:
+		self._players[player].notify_event(event, first)
+
+# def notify_event(self, event: Event) -> None:
+	# 	# print(
+	# 	# 	'{}: {}'.format(
+	# 	# 		event.__class__.__name__,
+	# 	# 		event.values,
+	# 	# 	)
+	# 	#
+	# 	# )
+	# 	for connection in self._connections.values():
+	# 		connection.notify_event(event)

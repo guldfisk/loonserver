@@ -14,6 +14,7 @@ class Receiver(threading.Thread):
 	def __init__(self, socket: JsonSocket):
 		super().__init__()
 		self._socket = socket
+		self._open_events = 1
 
 	def run(self):
 		while True:
@@ -32,16 +33,21 @@ class Receiver(threading.Thread):
 					}
 				)
 			elif received['type'] == 'event':
-				print(received['event_type'], received['values'])
+				if received['first']:
+					self._open_events += 1
+					print('-|'*self._open_events+received['event_type'], received['values'])
+				else:
+					print('-|'*self._open_events+received['event_type'], received['values'])
+					self._open_events -= 1
 			else:
 				print(received)
 
 
-TARGET = 'dominion.lost-world.dk'
-# TARGET = 'localhost'
+# TARGET = 'dominion.lost-world.dk'
+TARGET = 'localhost'
 # target = 'http://dominion.lost-world.dk'
 
-def create_game() -> str:
+def create_game(game_id: int, amount_players: int = 1) -> str:
 	client = SoapClient(
 		location ='http://'+TARGET + ':8080',
 		action ='http://'+TARGET + ':8080',
@@ -50,7 +56,7 @@ def create_game() -> str:
 		ns="ns0",
 	)
 
-	response = client.create_game(game_id=random.randint(0, 4096))
+	response = client.create_game(game_id = game_id, amount_players = amount_players)
 
 	player_id = ''
 	for item in response.ids:
@@ -58,15 +64,21 @@ def create_game() -> str:
 
 	return player_id
 
-def test():
 
-	player_id = create_game()
-	# player_id = 'f4e954ec27176bd8b9ac9422e04dfe6bcfbe5c6260a802c59f1400b2c7435f0d'
-	print('id: ', player_id)
+def _create_game():
+	game_id = random.randint(0, 4096)
+	player_id = str(create_game(game_id=game_id, amount_players=2)).split(',')
+	print(player_id)
+
+
+def _join_game():
+	_id = input('id: ')
 
 	s = JsonSocket(_socket.AF_INET, _socket.SOCK_STREAM)
-	print(TARGET)
-	s.connect((TARGET, 9999))
+
+	socket_address = TARGET
+
+	s.connect((socket_address, 9999))
 
 	receiver = Receiver(s)
 	receiver.start()
@@ -74,11 +86,24 @@ def test():
 	s.send_json(
 		{
 			'type': 'connect',
-			'id': str(player_id),
+			'id': str(_id),
 		}
 	)
 
 	receiver.join()
+
+
+commands = {
+	'create game': _create_game,
+	'join game': _join_game,
+}
+
+
+def test():
+	while True:
+		ind = input(': ')
+		commands.get(ind, lambda : None)()
+
 
 if __name__ == '__main__':
 	test()
