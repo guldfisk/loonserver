@@ -1,6 +1,7 @@
 import typing as t
 import threading
 import socket as _socket
+import sys
 
 import random
 
@@ -44,7 +45,7 @@ class Receiver(threading.Thread):
 
 
 # TARGET = 'dominion.lost-world.dk'
-TARGET = 'localhost'
+TARGET = domain = sys.argv[1] if len(sys.argv) > 1 else 'localhost'
 # target = 'http://dominion.lost-world.dk'
 
 def create_game(game_id: int, amount_players: int = 1) -> str:
